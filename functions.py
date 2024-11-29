@@ -3,36 +3,53 @@ import pandas as pd
 import random
 from collections import defaultdict
 
-
-# Step 2: Define custom hash functions
-def generate_hash_functions(num_hashes, max_rows):
-    hash_functions = []
-    for i in range(1, num_hashes + 1):
-        a, b = np.random.randint(1, max_rows, size=2)  # Random coefficients
-        hash_functions.append(lambda x, a=a, b=b: (a * x + b) % max_rows)
-    return hash_functions
-
 def createBinaryMatrix(df):
+    """
+    Function to create the Binary Matrix from a DataFrame df
 
+    Args:
+    - df: DataFrame containing all the rating given to all the movies present 
+
+    Returns:
+    - characteristic_matrix: A Sparse matrix of 1 and 0 if the userId has rated the movieId
+    """
+    # Get unique user IDs from the DataFrame
     users = df['userId'].unique()
+
+    # Get unique movie IDs from the DataFrame
     movies = df['movieId'].unique()
 
+    # Create a mapping from user ID to index
     user_to_index = {user: i for i, user in enumerate(users)}
+
+    # Create a mapping from movie ID to index
     movie_to_index = {movie: i for i, movie in enumerate(movies)}
 
+    # Count the total number of unique users
     num_users = len(users)
+
+    # Count the total number of unique movies
     num_movies = len(movies)
 
-    # Initialize the characteristic matrix
+    # Initialize a characteristic matrix with dimensions [num_movies x num_users]
+    # Each cell will be set to 0 initially, representing no interaction
     characteristic_matrix = np.zeros((num_movies, num_users), dtype=int)
 
-    # Fill the characteristic matrix
+    # Iterate over each row in the DataFrame
     for _, row in df.iterrows():
+        # Map the user ID in the row to its corresponding index
         user_idx = user_to_index[row['userId']]
+        
+        # Map the movie ID in the row to its corresponding index
         movie_idx = movie_to_index[row['movieId']]
+        
+        # Set the corresponding cell in the characteristic matrix to 1
+        # This indicates that the user has interacted with the movie
         characteristic_matrix[movie_idx, user_idx] = 1
 
+    # Return or use the characteristic matrix as needed
     return characteristic_matrix
+
 
 
 
@@ -41,7 +58,6 @@ def MinHashFunction(num_hashes, characteristic_matrix, m):
     Optimized MinHash function using row groups and partial computation.
 
     Args:
-    - num_users: Number of users (columns).
     - num_hashes: Number of hash functions to use.
     - characteristic_matrix: Binary characteristic matrix (rows: items, cols: users).
     - m: Number of rows to process per group.
@@ -93,7 +109,7 @@ def MinHashFunction(num_hashes, characteristic_matrix, m):
 
 
 
-def lsh_user_clustering(signature_matrix, num_bands = 3):
+def lsh_user_movies(signature_matrix, num_bands = 3):
     """
     Apply LSH to cluster similar users based on their MinHash signatures.
     Args:
@@ -103,19 +119,26 @@ def lsh_user_clustering(signature_matrix, num_bands = 3):
         A dictionary where keys are buckets (hash values), and values are lists of user indices.
     """
 
-    num_hashes, num_users = signature_matrix.shape
-    rows_per_band = num_hashes // num_bands
+    # Get the dimensions of the signature matrix
+    num_hashes_movies, num_users = signature_matrix.shape
+
+    # Calculate how many rows each band should contain
+    rows_per_band = num_hashes_movies // num_bands
 
     buckets = defaultdict(list)
 
     # Hash users within each band
     for band in range(num_bands):
+        
+        # Determine the range of rows corresponding to the current band
         start_row = band * rows_per_band
         end_row = start_row + rows_per_band
+        # Extract the submatrix (rows for this band) from the signature matrix
         band_matrix = signature_matrix[start_row:end_row, :] 
 
         # Hash each user's signature in this band
         for user_index in range(num_users):
+            # Create a tuple representing the band signature for this user
             band_signature = tuple(band_matrix[:, user_index])
             buckets[band_signature].append(user_index)
 
@@ -161,7 +184,6 @@ def recommend_movies(similar_users, user_movie_ratings, max_recommendations=5):
     """
     Recommend movies for a user based on similar users' ratings.
     Args:
-        user_index: Index of the target user.
         similar_users: List of indices of the most similar users.
         user_movie_ratings: DataFrame with columns ['userId', 'movieId', 'title', 'rating'].
         max_recommendations: Maximum number of movies to recommend.
@@ -170,9 +192,9 @@ def recommend_movies(similar_users, user_movie_ratings, max_recommendations=5):
     """
     # Filter ratings for the target user and similar users
     similar_users_ratings = user_movie_ratings[user_movie_ratings['userId'].isin(similar_users)]
-    # List of 
-    # Find common movies rated by similar users
+
     recommendations = []
+    # Loop over the similar_users_rating grouped by MovieId
     for movie_id, group in similar_users_ratings.groupby('movieId'):
         if len(group['userId'].unique()) > 1:  # At least two similar users rated the movie
             avg_rating = group['rating'].mean()
@@ -185,14 +207,21 @@ def recommend_movies(similar_users, user_movie_ratings, max_recommendations=5):
     # If recommendations are insufficient, add top-rated movies from the most similar user
     if len(recommendations) < max_recommendations:
         most_similar_user = similar_users[0]
+
+        # Filter the ratings of the most similar user from the 'similar_users_ratings' DataFrame
         top_movies = similar_users_ratings[similar_users_ratings['userId'] == most_similar_user]
+
+        # Sort the filtered movies by their ratings in descending order
+        # This ensures that the highest-rated movies by the most similar user are considered first
         top_movies = top_movies.sort_values(by='rating', ascending=False)
         for _, row in top_movies.iterrows():
+            # Stop adding recommendations if the desired number of recommendations is reached
             if len(recommendations) >= max_recommendations:
                 break
             if row['movieId'] not in [rec[0] for rec in recommendations]:
                 recommendations.append((row['movieId'], row['title'], row['rating']))
 
+    # We build a DataFrame extracting the Movie's Name, and its Avergae rating limiting for max_recommendation
     recommended_movies = pd.DataFrame(data = [[movie[1], movie[2]] for movie in recommendations[:max_recommendations]], columns = ["Movies Recommended","Rating"])
-    # Return at most max_recommendations
+
     return recommended_movies
