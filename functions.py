@@ -3,6 +3,9 @@ import pandas as pd
 import random
 from collections import defaultdict
 import re
+import plotly.express as px
+from sklearn.cluster import KMeans
+
 
 def createBinaryMatrix(df):
     """
@@ -445,3 +448,162 @@ def remove_numbers_from_title(title):
     # Remove all digits
     clean_title = re.sub(r'\d+', '', clean_title)  
     return clean_title
+
+
+
+
+def kmeans_optimized(data, n_clusters, max_iter=300, tol=1e-4, random_state=None):
+    """
+    Optimized K-Means using scikit-learn's KMeans class with KMeans++ initialization.
+
+    Parameters:
+    -----------
+    data : np.ndarray
+        Dataset of shape (n_samples, n_features).
+    n_clusters : int
+        Number of clusters.
+    max_iter : int
+        Maximum number of iterations.
+    tol : float
+        Tolerance for stopping criteria based on centroid shifts.
+    random_state : int or None
+        Random seed for reproducibility.
+
+    Returns:
+    --------
+    centroids : np.ndarray
+        Final centroid positions of shape (n_clusters, n_features).
+    labels : np.ndarray
+        Cluster assignment for each point of shape (n_samples,).
+    """
+
+    # Initialize the KMeans model with the specified parameters
+    kmeans = KMeans(n_clusters=n_clusters,
+                    init='k-means++',  # Ensures K-Means++ initialization
+                    max_iter=max_iter,
+                    tol=tol,
+                    random_state=random_state)
+
+    # Fit the KMeans model to the data
+    kmeans.fit(data)
+
+    # Get the final centroids and labels
+    centroids = kmeans.cluster_centers_
+    labels = kmeans.labels_
+
+    return centroids, labels
+
+
+def create3DScatterPlot(df, centroids):
+    # Create a 3D scatter plot using Plotly
+    fig = px.scatter_3d(df, x='Dim1', y='Dim2', z='Dim3', color='Cluster', 
+                        title='K-Means++ Clustering in 3D', labels={'Cluster': 'Cluster Labels'})
+    fig.update_traces(marker=dict(size=5, opacity=0.8), selector=dict(mode='markers'))
+
+    # Add centroids
+    fig.add_scatter3d(x=centroids[:, 0], y=centroids[:, 1], z=centroids[:, 2], 
+                    mode='markers', marker=dict(size=15, color='red', symbol='x'), name='Centroids')
+
+    # Adjust layout: increase margins and adjust title and labels
+    fig.update_layout(
+        title='K-Means++ Clustering in 3D',
+        scene=dict(
+            xaxis_title='Dim1',
+            yaxis_title='Dim2',
+            zaxis_title='Dim3',
+        ),
+        margin=dict(l=0, r=0, b=0, t=40),  # Increase margins to fit the plot better
+        legend=dict(x=0.7, y=0.9)  # Position the legend in a good place
+    )
+    # Show the plot
+    fig.show()
+
+def euclidean_distance(x1, x2):
+    return np.sqrt(np.sum((x1 - x2) ** 2))
+    
+def initialize_centroids(X, k):
+    n_samples = X.shape[0]
+    random_indices = np.random.choice(n_samples, k, replace=False)
+    centroids = X[random_indices]
+    return centroids
+
+def assign_clusters(X, centroids):
+    distances = np.linalg.norm((X[:, np.newaxis] - centroids).astype(float), axis=2 )
+    cluster_labels = np.argmin(distances, axis=1)
+    return cluster_labels
+
+def update_centroids(X, cluster_labels, k):
+    new_centroids = np.array([X[cluster_labels == i].mean(axis=0) for i in range(k)])
+    return new_centroids
+
+def k_means(df, k, max_iters=100, tol=1e-4):
+    # Step 1: Initialize centroids
+    X = df.values
+    centroids = initialize_centroids(X, k)
+
+    for i in range(max_iters):
+        # Step 2: Assign clusters
+        cluster_labels = assign_clusters(X, centroids)
+
+        # Step 3: Update centroids
+        new_centroids = update_centroids(X, cluster_labels, k)
+
+        # Check for convergence
+        if np.linalg.norm(new_centroids - centroids) < tol:
+            break
+
+        centroids = new_centroids
+
+    return centroids, cluster_labels
+
+
+def initialize_centroids_kmeans_plus_plus(df, k):
+    # Matrix to store centroids
+    centroids = np.zeros((k, df.shape[1])) 
+
+     # Randomly select the first centroid
+    centroids[0] = df.sample(n=1).values[0] 
+    
+    # Initializing the distance of all points to infinity
+    distances = np.array([np.inf] * df.shape[0])  # Set the initial distance to infinity
+
+    for i in range(1, k):
+        # For each point, calculate its distance to the closest centroid already selected
+        for j in range(df.shape[0]):
+            distances[j] = min(distances[j], euclidean_distance(df.iloc[j], centroids[i-1]))
+        
+
+        # Probability is proportional to the squared distance
+        probabilities = distances ** 2  
+         # Normalize the probability
+        probabilities /= probabilities.sum() 
+        # Select a point based on the probability
+        new_centroid_idx = np.random.choice(df.shape[0], p=probabilities)  
+        # Assign the new centroid
+        centroids[i] = df.iloc[new_centroid_idx].values  
+    
+    return centroids
+
+def kmeans_plus_plus(df, k, max_iters=100):
+    # Initialize centroids using K-means++
+    centroids = initialize_centroids_kmeans_plus_plus(df, k)
+    prev_centroids = np.zeros_like(centroids)  # To monitor changes in centroids
+    labels = np.zeros(df.shape[0])  # Labels for the clusters
+
+    # K-means algorithm
+    for _ in range(max_iters):
+
+        # Calculate the distance of each point to each centroid
+        distances = np.array([[euclidean_distance(x, c) for c in centroids] for x in df.values])
+        labels = np.argmin(distances, axis=1)  # Assign each point to the nearest centroid
+        
+        # Calculate the new centroids as the mean of points assigned to each cluster
+        new_centroids = np.array([df.values[labels == j].mean(axis=0) for j in range(k)])
+        
+        # Check if centroids have changed
+        if np.allclose(new_centroids, centroids):
+            break
+
+        centroids = new_centroids
+
+    return centroids, labels
