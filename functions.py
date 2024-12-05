@@ -521,7 +521,10 @@ def create3DScatterPlot(df, centroids):
 def euclidean_distance(x1, x2):
     return np.sqrt(np.sum((x1 - x2) ** 2))
     
-def initialize_centroids(X, k):
+def initialize_centroids(X, k, random_state=None):
+    # Set the seed if specified; otherwise, leave it random.
+    if random_state is not None:
+        np.random.seed(random_state)
     n_samples = X.shape[0]
     random_indices = np.random.choice(n_samples, k, replace=False)
     centroids = X[random_indices]
