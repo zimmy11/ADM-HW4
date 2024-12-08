@@ -5,7 +5,7 @@ from collections import defaultdict
 import re
 import plotly.express as px
 from sklearn.cluster import KMeans
-
+import matplotlib.pyplot as plt
 
 def createBinaryMatrix(df):
     """
@@ -55,16 +55,75 @@ def createBinaryMatrix(df):
     return characteristic_matrix
 
 
+def generate_hash_random(num_hashes):
+
+    # we create the hash function
+    # the equation is fixed but the parameters are changed randomly
+    np.random.seed(42)
+    hash_functions = [(random.randint(1, 100), random.randint(0, 100)) for _ in range(num_hashes)]
+    return hash_functions
+
+def generate_hash(num_hashes, a, b):
+
+    # we create the hash function
+    # the equation is fixed but the parameters are changed randomly
+    
+    hash_functions = [(a, b) for _ in range(num_hashes)]
+    return hash_functions
 
 
-def MinHashFunction(num_hashes, characteristic_matrix, m):
+def MinHashFunctionTest(num_hashes , characteristic_matrix, hashes):
+    """
+    MinHash Function used to test on a sample how the function changes over the Hashes FUnctions
+
+    Args:
+    - num_hashes: Number of hash functions to use.
+    - characteristic_matrix: Binary characteristic matrix (rows: movies, cols: users).
+    - hashes: List of Hash Functions.
+
+    Returns:
+    - signature_matrix: A matrix of MinHash signatures.
+    """
+
+    
+    num_users = characteristic_matrix.shape[1]
+    num_movies = characteristic_matrix.shape[0]
+    signature_matrix = np.full((num_hashes, num_users),  float('inf'))
+
+
+    for user in range(num_users):
+
+
+        # Process only the rows in the current group
+        user_column = characteristic_matrix[:, user]
+
+        # Iterate through hash functions
+        for hash_idx, hash_function in enumerate(hashes):
+
+            x, y = hash_function
+            # Compute hash values for the rows in the group
+            random_hashes = np.array([ (x * user * user_movie + y) % num_movies if user_movie != 0 else float('inf') for user_movie in user_column])
+
+            # We compute the minimum value between the hashes
+            min_hash = np.min(random_hashes)
+            
+            # We load into the signature matrix the Min Hash
+            signature_matrix[hash_idx, user] = min(
+                signature_matrix[hash_idx, user], min_hash
+            )
+
+    return signature_matrix
+
+
+
+
+def MinHashFunction(num_hashes, characteristic_matrix):
     """
     Optimized MinHash function using row groups and partial computation.
 
     Args:
     - num_hashes: Number of hash functions to use.
-    - characteristic_matrix: Binary characteristic matrix (rows: items, cols: users).
-    - m: Number of rows to process per group.
+    - characteristic_matrix: Binary characteristic matrix (rows: movies, cols: users).
 
     Returns:
     - signature_matrix: A matrix of MinHash signatures.
@@ -72,42 +131,32 @@ def MinHashFunction(num_hashes, characteristic_matrix, m):
 
     num_movies = characteristic_matrix.shape[0]
     num_users = characteristic_matrix.shape[1]
-    k = num_movies
-    num_groups = k // m
-    # Initialize the signature matrix with infinity
-    signature_matrix = np.full((num_hashes * num_groups, num_users), np.inf)
+
+    signature_matrix = np.full((num_hashes, num_users),  float('inf'))
 
     # Create random hash functions
-    hash_functions = [
-        (lambda x, a=a, b=b, p=k: (a * x + b) % p)
-        for a, b in zip(
-            random.sample(range(1, k), num_hashes),
-            random.sample(range(0, k), num_hashes),
-        )
-    ]
+    hash_functions = generate_hash_random(num_hashes)
 
-    for group in range(num_groups):
-        start_row = group * m
-        end_row = start_row + m
+    for user in range(num_users):
+
 
         # Process only the rows in the current group
-        group_matrix = characteristic_matrix[start_row:end_row, :]
+        user_column = characteristic_matrix[:, user]
 
         # Iterate through hash functions
-        for hash_idx, h in enumerate(hash_functions):
-            # Compute hash values for the rows in the group
-            row_hashes = np.array([h(row) for row in range(start_row, end_row)])
+        for hash_idx, hash_function in enumerate(hash_functions):
 
-            # Update the signature matrix for each column (user)
-            for user in range(num_users):
-                # Skip columns with all 0s in this group
-                user_column = group_matrix[:, user]
-                if np.any(user_column == 1):  # Only process columns with 1's
-                    min_hash = np.min(row_hashes[user_column == 1])
-                    signature_idx = group * num_hashes + hash_idx
-                    signature_matrix[signature_idx, user] = min(
-                        signature_matrix[signature_idx, user], min_hash
-                    )
+            x, y = hash_function
+            # Compute hash values for the rows in the group
+            random_hashes = np.array([ (x * user * user_movie + y) % num_movies if user_movie != 0 else float('inf') for user_movie in user_column])
+
+            # We compute the minimum value between the hashes
+            min_hash = np.min(random_hashes)
+            
+            # We load into the signature matrix the Min Hash
+            signature_matrix[hash_idx, user] = min(
+                signature_matrix[hash_idx, user], min_hash
+            )
 
     return signature_matrix
 
@@ -149,7 +198,7 @@ def lsh_user_movies(signature_matrix, num_bands = 3):
     return buckets
 
 
-def query_similar_users(user_index, buckets, signature_matrix, num_candidates=2):
+def query_similar_users(user_index, buckets, characteristic_matrix, num_candidates=2):
     """
     Identify the most similar users for a given user.
     Args:
@@ -171,11 +220,11 @@ def query_similar_users(user_index, buckets, signature_matrix, num_candidates=2)
     candidate_users.discard(user_index)
 
     # Compute Jaccard similarity for candidate users
-    user_signature = signature_matrix[:, user_index]
+    user_signature = characteristic_matrix[:, user_index]
     similarities = []
     for candidate in candidate_users:
-        candidate_signature = signature_matrix[:, candidate]
-        # Jaccard Similarity
+        candidate_signature = characteristic_matrix[:, candidate]
+        # Jaccard Similarity using the characteristic matrix
         similarity = np.mean(user_signature == candidate_signature) 
         similarities.append((candidate, similarity))
 
@@ -205,8 +254,7 @@ def recommend_movies(similar_users, user_movie_ratings, max_recommendations=5):
             title = group['title'].iloc[0]
             recommendations.append((movie_id, title, avg_rating))
 
-    # Sort recommendations by average rating
-    recommendations.sort(key=lambda x: x[2], reverse=True)
+
 
     # If recommendations are insufficient, add top-rated movies from the most similar user
     if len(recommendations) < max_recommendations:
@@ -225,10 +273,146 @@ def recommend_movies(similar_users, user_movie_ratings, max_recommendations=5):
             if row['movieId'] not in [rec[0] for rec in recommendations]:
                 recommendations.append((row['movieId'], row['title'], row['rating']))
 
+    # Sort recommendations by average rating
+    recommendations.sort(key=lambda x: x[2], reverse=True)
+    
     # We build a DataFrame extracting the Movie's Name, and its Avergae rating limiting for max_recommendation
     recommended_movies = pd.DataFrame(data = [[movie[1], movie[2]] for movie in recommendations[:max_recommendations]], columns = ["Movies Recommended","Rating"])
 
     return recommended_movies
+
+
+
+def real_Jaccard_similarity(characteristic_matrix, user1_id, user2_id):
+    """
+    Computes the true Jaccard similarity between two users based on the binary characteristic matrix.
+    The characteristic matrix indicates which items (e.g., movies) are associated with which users.
+
+    Args:
+        characteristic_matrix (np.ndarray): Binary matrix (items x users).
+        user1_id (int): ID of the first user.
+        user2_id (int): ID of the second user.
+
+    Returns:
+        float: Jaccard similarity between the two users.
+    """
+    # Compute the intersection (number of items shared by both users)
+    intersection = np.sum((characteristic_matrix[:, user1_id] == 1) & (characteristic_matrix[:, user2_id] == 1))
+    
+    # Compute the union (number of unique items across both users)
+    union = np.sum((characteristic_matrix[:, user1_id] == 1) | (characteristic_matrix[:, user2_id] == 1))
+    
+    # Return the Jaccard similarity, rounded to 2 decimal places; handle division by zero
+    return round(intersection / union, 2) if union != 0 else 0
+
+
+def MinHashJaccardSimilarity(signature_matrix, user1_id, user2_id):
+    """
+    Computes the estimated Jaccard similarity between two users using their MinHash signatures.
+
+    Args:
+        signature_matrix (np.ndarray): MinHash signature matrix (hash functions x users).
+        user1_id (int): ID of the first user.
+        user2_id (int): ID of the second user.
+
+    Returns:
+        float: Estimated Jaccard similarity based on MinHash signatures.
+    """
+    # Count the number of hash functions where both users have the same value
+    intersection = np.sum(signature_matrix[:, user1_id] == signature_matrix[:, user2_id])
+    
+    # Return the proportion of identical hashes as the similarity
+    return intersection / len(signature_matrix[:, user1_id])
+
+
+def hash_accuracy(signature_matrix, characteristic_matrix):
+    """
+    Computes the accuracy of MinHash similarity estimates by comparing them to true Jaccard similarities.
+    Evaluates the mean absolute error (MAE) between true and estimated similarities.
+
+    Args:
+        signature_matrix (np.ndarray): MinHash signature matrix (hash functions, users).
+        characteristic_matrix (np.ndarray): Binary characteristic matrix (movies, users).
+        
+
+    Returns:
+        - error (float): Mean absolute error between true and estimated similarities.
+        - jaccard_similarities (list): List of true Jaccard similarities.
+        - estimated_similarities (list): List of estimated Jaccard similarities.
+    """
+
+  
+    jaccard_similarities = []  # Store true Jaccard similarities
+    estimated_similarities = []  # Store estimated similarities from MinHash
+
+    # Iterate over all pairs of users (i, j) where i < j
+    for i in range(characteristic_matrix.shape[1]):
+        for j in range(i + 1, characteristic_matrix.shape[1]):
+            # Compute true Jaccard similarity
+            jaccard_similarity = real_Jaccard_similarity(characteristic_matrix, i, j)
+            # Compute estimated similarity using MinHash
+            estimated_similarity = MinHashJaccardSimilarity(signature_matrix, i, j)
+
+            # Append results to respective lists
+            jaccard_similarities.append(jaccard_similarity)
+            estimated_similarities.append(estimated_similarity)
+    
+    # Compute mean absolute error (MAE) between true and estimated similarities
+    error = np.mean(np.abs(np.array(jaccard_similarities) - np.array(estimated_similarities)))
+
+    return error, jaccard_similarities, estimated_similarities
+
+
+
+def threshold_accuracy(jaccard_similarities, estimated_similarities, num_thresholds=10):
+    """
+    Evaluates the precision/recall tradeoff for different similarity thresholds.
+
+    Args:
+        jaccard_similarities (list): True Jaccard similarities.
+        estimated_similarities (list): Estimated Jaccard similarities from MinHash.
+        num_thresholds (int): Number of thresholds to evaluate.
+
+    Returns:
+        None
+    """
+    # Generate thresholds evenly spaced between 0 and 1
+    thresholds = np.linspace(0, 1, num_thresholds)
+
+    plt.figure(figsize=(12, 6))  # Set figure size
+
+    for threshold in thresholds:
+        # Classify true positives based on the threshold for true similarities
+        true_positive = [1 if similarity >= threshold else 0 for similarity in jaccard_similarities]
+        # Classify predicted positives based on the threshold for estimated similarities
+        predicted_positive = [1 if similarity >= threshold else 0 for similarity in estimated_similarities]
+
+        # Calculate true positives, false positives, and false negatives
+        TP = sum(1 for t, p in zip(true_positive, predicted_positive) if t == 1 and p == 1)
+        FP = sum(1 for t, p in zip(true_positive, predicted_positive) if t == 0 and p == 1)
+        FN = sum(1 for t, p in zip(true_positive, predicted_positive) if t == 1 and p == 0)
+
+        # Compute precision and recall; handle division by zero
+        precision = TP / (TP + FP) if (TP + FP) > 0 else 0
+        recall = TP / (TP + FN) if (TP + FN) > 0 else 0
+
+        # Plot the precision/recall ratio for the current threshold
+        plt.plot(threshold, precision / recall if recall > 0 else 0, marker='o', label=f'Threshold {threshold:.2f}')
+
+    # Add plot title and labels
+    plt.title('Precision/Recall Ratio vs. Threshold')
+    plt.xlabel('Threshold')
+    plt.ylabel('Precision/Recall Ratio')
+    plt.legend()  # Show legend for thresholds
+
+    # Add grid to the plot
+    plt.grid(True)
+    plt.show()  # Display the plot
+
+
+
+
+
 
 
 # Function to clean and reorder the dataset by removing unnecessary columns
@@ -452,7 +636,7 @@ def remove_numbers_from_title(title):
 
 
 
-def kmeans_optimized(data, n_clusters, max_iter=300, tol=1e-4, random_state=None):
+def kmeans_optimized(data, n_clusters, max_iter=300, random_state=None):
     """
     Optimized K-Means using scikit-learn's KMeans class with KMeans++ initialization.
 
@@ -464,11 +648,7 @@ def kmeans_optimized(data, n_clusters, max_iter=300, tol=1e-4, random_state=None
         Number of clusters.
     max_iter : int
         Maximum number of iterations.
-    tol : float
-        Tolerance for stopping criteria based on centroid shifts.
-    random_state : int or None
-        Random seed for reproducibility.
-
+    
     Returns:
     --------
     centroids : np.ndarray
@@ -480,9 +660,8 @@ def kmeans_optimized(data, n_clusters, max_iter=300, tol=1e-4, random_state=None
     # Initialize the KMeans model with the specified parameters
     kmeans = KMeans(n_clusters=n_clusters,
                     init='k-means++',  # Ensures K-Means++ initialization
-                    max_iter=max_iter,
-                    tol=tol,
-                    random_state=random_state)
+                    max_iter=max_iter
+                    )
 
     # Fit the KMeans model to the data
     kmeans.fit(data)
@@ -492,6 +671,7 @@ def kmeans_optimized(data, n_clusters, max_iter=300, tol=1e-4, random_state=None
     labels = kmeans.labels_
 
     return centroids, labels
+
 
 def create3DScatterPlot(df, centroids):
     """
@@ -511,7 +691,7 @@ def create3DScatterPlot(df, centroids):
     """
     # Create a 3D scatter plot using Plotly
     fig = px.scatter_3d(df, x='Dim1', y='Dim2', z='Dim3', color='Cluster', 
-                        title='K-Means++ Clustering in 3D', labels={'Cluster': 'Cluster Labels'})
+                        title='K-Means Clustering in 3D', labels={'Cluster': 'Cluster Labels'})
     fig.update_traces(marker=dict(size=5, opacity=0.8), selector=dict(mode='markers'))
 
     # Add centroids
@@ -520,7 +700,7 @@ def create3DScatterPlot(df, centroids):
 
     # Adjust layout: increase margins and adjust title and labels
     fig.update_layout(
-        title='K-Means++ Clustering in 3D',
+        title='K-Means Clustering in 3D',
         scene=dict(
             xaxis_title='Dim1',
             yaxis_title='Dim2',
