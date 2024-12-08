@@ -4,11 +4,11 @@ The goal of this project is to develop a **Recommender System** that is able to 
 
 Then we have implemented by scratch three versions of th e **K-Means** algorithm, and determined the optimal number of clusters.
 
-All the data we've worked on was downloaded from the Kaggle dataset(https://www.kaggle.com/datasets/grouplens/movielens-20m-dataset?select=rating.csv).
+All the data we've worked on was downloaded from this [Kaggle dataset](https://www.kaggle.com/datasets/grouplens/movielens-20m-dataset?select=rating.csv).
 ___
 <div style="text-align: center;">
   <img src="https://camo.githubusercontent.com/6ec1c674287af1e3a36028abbce44d4a011f48e37c612e98be29ac1c5e339617/68747470733a2f2f6d6f7669656c656e732e6f72672f696d616765732f736974652f6d61696e2d73637265656e2e706e67" alt="Recommender System Picture"/>
-</div>
+</div> 
 
 ____
 
@@ -45,11 +45,11 @@ ___
     <br>
 
   - In our `main.ipynb` we have also realized an interactive 3D scatter plot using the *Plotly* module *Express*
-
+   <br><br><br>
   <div align="center">
   <img src="assets/3DScatterPlot.gif" alt="Video GIF" width = "600" height = "300">
 </div>
-
+ <br><br>
 
 
 
