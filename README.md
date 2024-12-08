@@ -2,7 +2,7 @@
 
 The goal of this project is to develop a **Recommender System** that is able to recommend movies based on similar users.
 
-Then we have implemented by scratch three versions of th e **K-Means** algorithm, and determined the optimal number of clusters.
+Then we have implemented by scratch three versions of the **K-Means** algorithm, and determined the optimal number of clusters.
 
 All the data we've worked on was downloaded from this [Kaggle dataset](https://www.kaggle.com/datasets/grouplens/movielens-20m-dataset?select=rating.csv).
 ___
